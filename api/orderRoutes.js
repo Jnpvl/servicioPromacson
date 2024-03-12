@@ -1,90 +1,110 @@
 require('dotenv').config();
-
 const express = require('express');
 const db = require('../database');
 const { body, validationResult, param } = require('express-validator');
 const router = express.Router();
-
+const util = require('util');
+db.query = util.promisify(db.query); 
 
 router.get('/', (req, res, next) => {
   db.query('SELECT * FROM pedidos', (err, results) => {
     if (err) {
       return next(err);
     }
-    res.status(200).json(results);
+    res.status(200).json({
+      message: "Pedidos recuperados con exito",
+      pedidos :results
+    });
   });
 });
 
-
-router.post('/',
-  [
-    body('folio').notEmpty().withMessage('El folio es obligatorio'),
-    body('destino').notEmpty().withMessage('El destino es obligatorio'),
-    body('estatus').notEmpty().withMessage('El estatus es obligatorio'),
-  ],
-  (req, res, next) => {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({ errors: errors.array() });
-    }
-
-    const { folio, destino, estatus } = req.body;
-    const fechaFacturacion = new Date();
-    const query = 'INSERT INTO pedidos (folio, destino, fechaFacturacion, estatus) VALUES (?, ?, ?, ?)';
-    db.query(query, [folio, destino, fechaFacturacion, estatus], (err, result) => {
-      if (err) {
-        return next(err);
-      }
-      res.status(201).json({ folio, destino, fechaFacturacion, estatus });
-    });
+router.post('/', [
+  body('folio').trim().isLength({ min: 1 }).withMessage('Folio es requerido.'),
+  body('cliente').trim().isLength({ min: 1 }).withMessage('Cliente es requerido.'),
+  body('estatus').trim().isLength({ min: 1 }).withMessage('Estatus es requerido.'),
+], async (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    return res.status(400).json({ errors: errors.array() });
   }
-);
 
-router.put('/:folio',
-  [
-    param('folio').notEmpty().withMessage('El folio es obligatorio para actualizar'),
-    body('destino').notEmpty().withMessage('El destino es obligatorio'),
-    body('estatus').notEmpty().withMessage('El estatus es obligatorio'),
-  ],
-  (req, res, next) => {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({ errors: errors.array() });
+  const { folio, cliente, estatus } = req.body;
+  const query = 'INSERT INTO pedidos (folio, cliente, estatus, HoraF) VALUES (?, ?, ?, NOW())';
+  const queryParams = [folio, cliente, estatus];
+
+  try {
+    await db.query(query, queryParams);
+    res.status(201).json({ success: true, message: 'Pedido creado con éxito.' });
+  } catch (error) {
+    if (error.code === 'ER_DUP_ENTRY') {
+      return res.status(400).json({ success: false, message: `El folio ${folio} ya existe. Por favor, usa un folio diferente.` });
     }
-
-    const { folio } = req.params;
-    const { destino, estatus } = req.body;
-    const fechaFacturacion = new Date();
-    const query = 'UPDATE pedidos SET destino = ?, fechaFacturacion = ?, estatus = ? WHERE folio = ?';
-    db.query(query, [destino, fechaFacturacion, estatus, folio], (err, result) => {
-      if (err) {
-        return next(err);
-      }
-      res.status(200).json({ folio, destino, fechaFacturacion, estatus });
-    });
+    console.error('Error al insertar el pedido:', error);
+    res.status(500).json({ success: false, message: 'Error al crear el pedido', error: error.message });
   }
-);
+});
 
 
-router.delete('/:folio',
-  [
-    param('folio').notEmpty().withMessage('El folio es obligatorio para eliminar')
-  ],
-  (req, res, next) => {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({ errors: errors.array() });
+
+router.put('/:folio', async (req, res) => {
+  const { folio } = req.params;
+  const { estatus, cliente } = req.body; 
+
+  let query;
+  let queryParams;
+
+  switch (estatus) {
+    case 'Cargado':
+      query = 'UPDATE pedidos SET cliente = ?, estatus = ?, HoraC = NOW() WHERE folio = ?';
+      queryParams = [cliente, estatus, folio];
+      break;
+    case 'En ruta':
+      query = 'UPDATE pedidos SET cliente = ?, estatus = ?, HoraR = NOW() WHERE folio = ?';
+      queryParams = [cliente, estatus, folio];
+      break;
+    case 'Entregado':
+      query = 'UPDATE pedidos SET cliente = ?, estatus = ?, HoraE = NOW() WHERE folio = ?';
+      queryParams = [cliente, estatus, folio];
+      break;
+    default:
+      return res.status(400).json({ error: 'Estado no válido' });
+  }
+
+  try {
+    const result = await db.query(query, queryParams);
+    if (result.affectedRows > 0) {
+      res.json({ success: true, message: 'Pedido actualizado correctamente.' });
+    } else {
+      res.status(404).json({ success: false, message: 'Pedido no encontrado.' });
     }
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
 
-    const { folio } = req.params;
+
+router.delete('/:folio', (req, res, next) => {
+  const { folio } = req.params;
+  db.query('SELECT * FROM pedidos WHERE folio = ?', folio, (err, results) => {
+    if (err) {
+      return next(err);
+    }
+    if (results.length === 0) {
+      return res.status(404).json({
+        message: "Pedido no encontrado o ya fue eliminado"
+      });
+    }
     const query = 'DELETE FROM pedidos WHERE folio = ?';
     db.query(query, folio, (err, result) => {
       if (err) {
         return next(err);
       }
-      res.status(204).send();
+      res.status(200).json({
+        message: "Pedido eliminado con éxito"
+      });
     });
-  }
-);
+  });
+});
+
 
 module.exports = router;

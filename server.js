@@ -6,7 +6,7 @@ const loginRoute = require('./api/loginRoute')
 const orderRoutes = require('./api/orderRoutes');
 
 const app = express();
-const port = 3000;
+const port = 3001;
 
 app.use(express.json());
 app.use(cors());
@@ -28,4 +28,6 @@ app.use((err, req, res, next) => {
   console.error(err.stack);
   res.status(500).send('Something went wrong!');
 });
+
+
 

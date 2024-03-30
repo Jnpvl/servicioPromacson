@@ -6,31 +6,33 @@ const router = express.Router();
 const util = require('util');
 db.query = util.promisify(db.query); 
 
-router.get('/', (req, res, next) => {
-  db.query('SELECT * FROM pedidos', (err, results) => {
-    if (err) {
-      return next(err);
-    }
+
+router.get('/', async (req, res, next) => {
+  try {
+    const results = await db.query('SELECT * FROM pedidos');
     res.status(200).json({
-      message: "Pedidos recuperados con exito",
-      pedidos :results
+      message: "Pedidos recuperados con éxito",
+      pedidos: results
     });
-  });
+  } catch (err) {
+    next(err);
+  }
 });
+
 
 router.post('/', [
   body('folio').trim().isLength({ min: 1 }).withMessage('Folio es requerido.'),
   body('cliente').trim().isLength({ min: 1 }).withMessage('Cliente es requerido.'),
-  body('estatus').trim().isLength({ min: 1 }).withMessage('Estatus es requerido.'),
 ], async (req, res) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
     return res.status(400).json({ errors: errors.array() });
   }
 
-  const { folio, cliente, estatus } = req.body;
-  const query = 'INSERT INTO pedidos (folio, cliente, estatus, HoraF) VALUES (?, ?, ?, NOW())';
-  const queryParams = [folio, cliente, estatus];
+  const { folio, cliente } = req.body;
+  const query = 'INSERT INTO pedidos (folio, cliente, estatus, HoraF) VALUES (?, ?, "Facturado", NOW())';
+  const queryParams = [folio, cliente];
+
 
   try {
     await db.query(query, queryParams);
@@ -54,6 +56,10 @@ router.put('/:folio', async (req, res) => {
   let queryParams;
 
   switch (estatus) {
+    case 'Facturado':
+      query = 'UPDATE pedidos SET cliente = ?, estatus = ?, HoraF = NOW() WHERE folio = ?';
+      queryParams = [cliente, estatus, folio];
+      break;
     case 'Cargado':
       query = 'UPDATE pedidos SET cliente = ?, estatus = ?, HoraC = NOW() WHERE folio = ?';
       queryParams = [cliente, estatus, folio];

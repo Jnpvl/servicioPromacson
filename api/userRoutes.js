@@ -46,21 +46,69 @@ router.post('/',
 
 
 router.put('/:id',
+  [
+    body('contraseña').optional().isLength({ min: 6 }).withMessage('La contraseña debe tener al menos 6 caracteres'),
+  ],
   (req, res, next) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
+    }
+
     const { id } = req.params;
-    const { nombre, apellido, tipoUsuario, estatus } = req.body;
-    const query = 'UPDATE usuarios SET nombre = ?, apellido = ?, tipoUsuario = ?, estatus = ? WHERE id = ?';
-    db.query(query, [nombre, apellido, tipoUsuario, estatus, id], (err, result) => {
+    const { nombre, apellido, tipoUsuario, estatus, contraseña } = req.body;
+
+    const setClause = [];
+    const queryParams = [];
+
+    if (nombre) {
+      setClause.push("nombre = ?");
+      queryParams.push(nombre);
+    }
+    if (apellido) {
+      setClause.push("apellido = ?");
+      queryParams.push(apellido);
+    }
+    if (tipoUsuario) {
+      setClause.push("tipoUsuario = ?");
+      queryParams.push(tipoUsuario);
+    }
+    if (estatus) {
+      setClause.push("estatus = ?");
+      queryParams.push(estatus);
+    }
+    if (contraseña) {
+      setClause.push("contraseña = ?");
+      queryParams.push(contraseña);
+    }
+
+    if (setClause.length === 0) {
+      return res.status(400).json({
+        message: "No se proporcionaron datos para actualizar"
+      });
+    }
+
+    const query = `UPDATE usuarios SET ${setClause.join(', ')} WHERE id = ?`;
+    queryParams.push(id);
+
+    db.query(query, queryParams, (err, result) => {
       if (err) {
         return next(err);
       }
+      if (result.affectedRows === 0) {
+        return res.status(404).json({
+          message: "Usuario no encontrado"
+        });
+      }
+   
       res.status(200).json({
         message: "Usuario actualizado con éxito",
-        usuario: { id: parseInt(id, 10), nombre, apellido, tipoUsuario, estatus }
+        usuario: { id: parseInt(id, 10), nombre, apellido, tipoUsuario, estatus, contraseña } 
       });
     });
   }
 );
+
 
 router.delete('/:id', (req, res, next) => {
   const { id } = req.params;

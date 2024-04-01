@@ -19,6 +19,24 @@ router.get('/', async (req, res, next) => {
   }
 });
 
+router.get('/:folio', async (req, res) => {
+  const { folio } = req.params;
+  try {
+    const results = await db.query('SELECT * FROM pedidos WHERE folio = ?', [folio]);
+    if (results.length > 0) {
+      res.status(200).json({
+        message: "Pedido encontrado con éxito",
+        pedido: results[0]
+      });
+    } else {
+      res.status(404).json({ message: "Pedido no encontrado" });
+    }
+  } catch (err) {
+    console.error('Error al recuperar los detalles del pedido:', err);
+    res.status(500).json({ message: "Error al recuperar los detalles del pedido", error: err.message });
+  }
+});
+
 
 router.post('/', [
   body('folio').trim().isLength({ min: 1 }).withMessage('Folio es requerido.'),
@@ -45,8 +63,6 @@ router.post('/', [
     res.status(500).json({ success: false, message: 'Error al crear el pedido', error: error.message });
   }
 });
-
-
 
 router.put('/:folio', async (req, res) => {
   const { folio } = req.params;
@@ -79,15 +95,27 @@ router.put('/:folio', async (req, res) => {
   try {
     const result = await db.query(query, queryParams);
     if (result.affectedRows > 0) {
-      res.json({ success: true, message: 'Pedido actualizado correctamente.' });
+      const updatedResults = await db.query('SELECT * FROM pedidos WHERE folio = ?', [folio]);
+      if (updatedResults.length > 0) {
+        res.json({
+          success: true,
+          message: 'Pedido actualizado correctamente.',
+          pedido: updatedResults[0] 
+        });
+      } else {
+        res.status(404).json({ success: false, message: 'Pedido no encontrado después de la actualización.' });
+      }
     } else {
       res.status(404).json({ success: false, message: 'Pedido no encontrado.' });
     }
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
-});
 
+
+
+
+});
 
 router.delete('/:folio', (req, res, next) => {
   const { folio } = req.params;

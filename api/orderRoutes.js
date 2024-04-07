@@ -37,7 +37,6 @@ router.get('/:folio', async (req, res) => {
   }
 });
 
-
 router.post('/', [
   body('folio').trim().isLength({ min: 1 }).withMessage('Folio es requerido.'),
   body('cliente').trim().isLength({ min: 1 }).withMessage('Cliente es requerido.'),
@@ -64,9 +63,32 @@ router.post('/', [
   }
 });
 
+router.delete('/:folio', (req, res, next) => {
+  const { folio } = req.params;
+  db.query('SELECT * FROM pedidos WHERE folio = ?', folio, (err, results) => {
+    if (err) {
+      return next(err);
+    }
+    if (results.length === 0) {
+      return res.status(404).json({
+        message: "Pedido no encontrado o ya fue eliminado"
+      });
+    }
+    const query = 'DELETE FROM pedidos WHERE folio = ?';
+    db.query(query, folio, (err, result) => {
+      if (err) {
+        return next(err);
+      }
+      res.status(200).json({
+        message: "Pedido eliminado con éxito"
+      });
+    });
+  });
+});
+
 router.put('/:folio', async (req, res) => {
   const { folio } = req.params;
-  const { estatus, cliente } = req.body; 
+  const { estatus, cliente, latitud, longitud } = req.body; 
 
   let query;
   let queryParams;
@@ -93,51 +115,59 @@ router.put('/:folio', async (req, res) => {
   }
 
   try {
-    const result = await db.query(query, queryParams);
-    if (result.affectedRows > 0) {
-      const updatedResults = await db.query('SELECT * FROM pedidos WHERE folio = ?', [folio]);
-      if (updatedResults.length > 0) {
-        res.json({
-          success: true,
-          message: 'Pedido actualizado correctamente.',
-          pedido: updatedResults[0] 
-        });
-      } else {
-        res.status(404).json({ success: false, message: 'Pedido no encontrado después de la actualización.' });
-      }
+    await db.query(query, queryParams);
+    if (estatus === 'En ruta' && latitud && longitud) {
+      await db.query('INSERT INTO seguimiento_gps (folio, latitud, longitud) VALUES (?, ?, ?)', [folio, latitud, longitud]);
+    }
+
+    const updatedResults = await db.query('SELECT * FROM pedidos WHERE folio = ?', [folio]);
+    if (updatedResults.length > 0) {
+      res.json({
+        success: true,
+        message: 'Pedido actualizado correctamente, seguimiento iniciado.',
+        pedido: updatedResults[0] 
+      });
     } else {
-      res.status(404).json({ success: false, message: 'Pedido no encontrado.' });
+      res.status(404).json({ success: false, message: 'Pedido no encontrado después de la actualización.' });
     }
   } catch (error) {
+    console.error('Error durante la actualización del pedido o al iniciar el seguimiento:', error);
     res.status(500).json({ error: error.message });
   }
-
-
-
-
 });
 
-router.delete('/:folio', (req, res, next) => {
+router.post('/seguimiento/:folio', async (req, res) => {
   const { folio } = req.params;
-  db.query('SELECT * FROM pedidos WHERE folio = ?', folio, (err, results) => {
-    if (err) {
-      return next(err);
-    }
-    if (results.length === 0) {
-      return res.status(404).json({
-        message: "Pedido no encontrado o ya fue eliminado"
-      });
-    }
-    const query = 'DELETE FROM pedidos WHERE folio = ?';
-    db.query(query, folio, (err, result) => {
-      if (err) {
-        return next(err);
-      }
-      res.status(200).json({
-        message: "Pedido eliminado con éxito"
-      });
+  const { latitud, longitud } = req.body;
+
+  try {
+    await db.query('INSERT INTO seguimiento_gps (folio, latitud, longitud) VALUES (?, ?, ?)', [folio, latitud, longitud]);
+    res.json({
+      success: true,
+      message: 'Ubicación actualizada con éxito.'
     });
-  });
+  } catch (error) {
+    console.error('Error al insertar la ubicación GPS:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.get('/seguimiento/:folio', async (req, res) => {
+  const { folio } = req.params;
+  try {
+    const results = await db.query('SELECT * FROM promacson.seguimiento_gps INNER JOIN promacson.pedidos ON seguimiento_gps.folio = pedidos.folio Where seguimiento_gps.folio = ?', [folio]);
+    if (results.length > 0) {
+      res.status(200).json({
+        message: "coordenadas del pedido encontrada con éxito",
+        coordenadas: results
+      });
+    } else {
+      res.status(404).json({ message: "coordenadas del pedido no encontradas" });
+    }
+  } catch (err) {
+    console.error('Error al recuperar las coordenadas del pedido:', err);
+    res.status(500).json({ message: "Error al recuperar las coordendas del pedido", error: err.message });
+  }
 });
 
 
